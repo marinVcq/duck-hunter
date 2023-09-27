@@ -9,7 +9,12 @@
 #include <SDL_timer.h>
 #include <SDL_ttf.h>
 #include <string.h>
-#include<conio.h>
+#include <conio.h>
+
+#include "dog.h"
+#include "bird.h"
+#include "panel.h"
+#include "useful.h"
 
 // Joystick index
 #define BUTTON_A 1
@@ -17,20 +22,43 @@
 #define SELECT_BUTTON_INDEX 8
 #define START_BUTTON_INDEX 9
 
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 600
+// Screen dimensions
+#define SCREEN_WIDTH 768
+#define SCREEN_HEIGHT 720
 
+// Position of the top score
+#define TOP_SCORE_X 525
+#define TOP_SCORE_Y 604
 
-#define TIMER_X 670
-#define TIMER_Y 570
-#define SCORE_X 125
-#define SCORE_Y 570
-#define WEAPON_X 575
-#define WEAPON_Y 10
+// Position of the current score 
+#define SCORE_X 600
+#define SCORE_Y 638
 
+// Position of current round
+#define ROUND_X 134
+#define ROUND_Y 588
+
+// Position of the pop-up panel
+#define PANEL_X SCREEN_WIDTH/2
+#define PANEL_Y SCREEN_HEIGHT/2 - 150
+
+// Position of remaining shot
+#define SHOT_X 75
+#define SHOT_Y 620
+
+// Sight specs
 #define SIGHT_VELOCITY 20
-#define NUM_BIRDS 3
+#define SIGHT_WIDTH 80
+#define SIGHT_HEIGHT 80
+
+// Bird constant variables
 #define BIRD_WIDTH 175
+#define BIRD_HEIGHT 100
+#define MAX_BIRDS 2
+
+// Cursor menu constant variables
+#define CURSOR_WIDTH 8 * 4
+#define CURSOR_HEIGHT 6 * 4
 
 typedef struct {
     int x, y; // Position of the player
@@ -38,63 +66,84 @@ typedef struct {
     int height;
     float speedX, speedY;
     SDL_Texture *sightTexture;
+    bool isVisible;
 } Sight;
-
-typedef struct Bird {
-    SDL_Texture* texture;     // Texture of the bird
-    int x;                    // x-coordinate of the bird
-    int y;                    // y-coordinate of the bird
-    int velocityX;            // Horizontal velocity of the bird
-    int velocityY;            // Vertical velocity of the bird
-    int frameWidth;           // Width of each animation frame
-    int frameHeight;          // Height of each animation frame
-    int currentFrame;         // Current frame of animation
-    int totalFrames;          // Total number of frames in the spritesheet
-    int numColumns;           // Number of columns in the spritesheet
-    int numRows;              // Number of rows in the spritesheet
-    int frameDelay;
-    int width, height;
-} Bird;
-
-
-
-typedef struct {
-    SDL_Texture* texture; // Texture for the weapon image
-    int magazine;
-    int ammo;
-} Weapon;
-
-typedef struct {
-    int score;
-    Weapon *currentWeapon;
-} Player;
 
 // Game states
 typedef enum {
-    START,
+    MENU,
     PLAYING,
     GAME_OVER
 } GameState;
 
+// Game type | Not implemented yet
+typedef enum {
+    GAME_A,
+    GAME_B,
+    GAME_C
+} GameType;
+
+// Game structure
+typedef struct {
+    SDL_Texture *menuTexture;
+    SDL_Texture *cursorTexture;
+    SDL_Texture *backgroundTexture;
+    SDL_Texture *backgroundWithoutSkyTexture;
+    bool roundStart;
+    int numBirds;
+    int topScore;
+    int score;
+    int round;
+    int shot;
+    int hit;
+    int birdsRemain;
+    int menuCursorX;
+    int menuCursorY;
+    GameState gameState;
+    GameType gameType;
+} Game;
+
+// NOT IMPLEMENTED YET
+typedef struct {
+    int score;
+} Player;
+
 extern SDL_Renderer* renderer;
 extern SDL_Window* window;
+extern Uint32 roundStartTime;
+extern bool aButtonPressed;
+extern bool bButtonPressed;
+extern bool startButtonPressed;
+extern bool selectButtonPressed;
+extern bool joyYButtonPressed;
+extern bool joyXButtonPressed;
 
-// Define game state and player
-GameState gameState = START;
+// Declare needed stuff
+Game game;
 Sight sight;
-extern Uint32 messageTimer;
-extern bool displayStartMessage;
-extern int remainingTime; // Initial time in seconds
-extern Uint32 startTime;
+Dog dog;
+
+// Declare panel
+Panel gameOverPanel;
+Panel flyAwayPanel;
+Panel roundPanel;
+Panel perfectPanel;
+Panel tryAgainPanel;
+
 // Declare function prototypes for your game functions
 int initializeGame();
 void cleanupGame();
 void handleEvents();
 void updateGame();
 void renderGame();
-bool loadTexture(SDL_Renderer *renderer, const char *imagePath, SDL_Texture **texture);
-void renderText(SDL_Renderer* renderer, const char* fontFile, const char* text, int x, int y, const char* color, int fontSize);
-void renderTimer(SDL_Renderer *renderer,int remainingTime);
-void spawnBird();
-void renderScore(SDL_Renderer *renderer,int score);
+void renderTopScore(SDL_Renderer *renderer);
+void renderScore(int score);
+void renderRound(int round);
+void renderShot(int shot);
+void renderHit(int hit);
+void displayRound(int round);
+void renderFlyAway();
+void renderSight(SDL_Renderer *renderer, Sight *sight);
+void initializeGameVariables();
+
 #endif

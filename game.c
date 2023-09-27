@@ -1,28 +1,26 @@
 #include "game.h"
 
 SDL_Renderer* renderer = NULL;
-SDL_Texture *backgroundTexture = NULL;
 SDL_Window* window = NULL; 
 
-Uint32 messageTimer = 0;
-bool displayStartMessage = true;
-int remainingTime = 60; // Initial time in seconds
-Uint32 startTime = 0;
-int minX = 0;
-int minY = 0;
-int maxX = SCREEN_WIDTH - 100; // Subtract cursor width
-int maxY = SCREEN_HEIGHT - 100; // Subtract cursor height
-int score = 0;
+bool aButtonPressed = false;
+bool bButtonPressed = false;
+bool startButtonPressed = false;
+bool selectButtonPressed = false;
+bool joyYButtonPressed = false;
+bool joyXButtonPressed = false;
 
-Bird birds[NUM_BIRDS]; // Define an array of Bird objects
+bool menuCursorVisible = true;      // Needed to flick the menu selector
+bool popUpVisible = true;      // Needed to flick the menu selector
+
+Bird birds[MAX_BIRDS];              // Define an array of Bird objects
 int numBirds = 0;
-Uint32 lastBirdSpawnTime = 0; // Initialize the timer variable
-const Uint32 birdSpawnDelay = 1000; // Delay in milliseconds between bird spawns
-// Initialize the weapon
-Weapon shotgun;
-Player player;
+Uint32 roundStartTime = 0;          // control the pop-pup panel time
 
+// Main function 
 int main(int argc, char* argv[]) {
+
+    // Initialization
     if (initializeGame() != 0) {
         fprintf(stderr, "Game initialization failed\n");
         return 1;
@@ -32,104 +30,82 @@ int main(int argc, char* argv[]) {
     int quit = 0;
     SDL_Event e;
     while (!quit) {
-
-
         handleEvents(&quit);
         updateGame();
         renderGame();
-
     }
-
+    
+    // Clean resource and memory
     cleanupGame();
     return 0;
 }
 
-// Define a function to spawn a bird
-void spawnBird() {
-    // Bird spawning logic (similar to your initialization code)
-    Bird newBird;
-
-    loadTexture(renderer, "bird.png", &newBird.texture); // Load bird spritesheet texture
-    newBird.x = 0 - BIRD_WIDTH;
-    newBird.y = rand() % (321);
-    newBird.velocityX = 1 + (rand() % 150) / 100.0; // Random value between 1 and 2
-    newBird.velocityY = 0; // Vertical velocity (adjust as needed)
-    newBird.frameWidth = 520 / 3; // Width of each frame (assuming 3 columns in the spritesheet)
-    newBird.frameHeight = 480 / 3; // Height of each frame (assuming 3 rows in the spritesheet)
-    newBird.currentFrame = 0; // Initialize current frame
-    newBird.totalFrames = 9; // Total number of frames in the spritesheet
-    newBird.numColumns = 3; // Number of columns in the spritesheet
-    newBird.numRows = 3; // Number of rows in the spritesheet
-    newBird.frameDelay = 20;
-    newBird.width = 50;
-    newBird.height = 50;
-
-    if (numBirds < NUM_BIRDS) {
-        birds[numBirds++] = newBird;
-    }
-    printf("number of bird: %d\n", numBirds);
-}
-
-
+// Function to initialize game variables and SDL
 int initializeGame() {
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) != 0) {
-        printf("Failed to initialize SDL: %s\n", SDL_GetError());
+    if (!initializeSDL()) {
         return false;
     }
 
-    // Initialize SDL_image with PNG support
-    if (IMG_Init(IMG_INIT_PNG) == 0) {
-        printf("Failed to initialize SDL_image: %s\n", IMG_GetError());
+    if (!createWindowAndRenderer(&window, &renderer)) {
         return false;
     }
 
-    // Initialize SDL_ttf
-    if (TTF_Init() < 0) {
-        printf("Failed to initialize SDL_ttf: %s\n", TTF_GetError());
-        return false;
-    }
+    initializeGameVariables();
 
-    window = SDL_CreateWindow("Drone Simulator", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                               SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-    if (!window) {
-        printf("Failed to create window: %s\n", SDL_GetError());
-        return false;
-    }
-
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (!renderer) {
-        printf("Failed to create renderer: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        return false;
-    }
-
-
-    // Load sight texture and set initial position
+    // Load game texture and set initial position
     loadTexture(renderer, "sight.png", &sight.sightTexture ); // Replace with your texture loading function
-    loadTexture(renderer, "background.png",&backgroundTexture );
-    loadTexture(renderer, "shotgun.png", &shotgun.texture);
+    loadTexture(renderer, "menu.png",&game.menuTexture );
+    loadTexture(renderer, "cursor.png",&game.cursorTexture );
+    loadTexture(renderer, "background.png",&game.backgroundTexture );
+    loadTexture(renderer, "backgroundWithoutSky.png",&game.backgroundWithoutSkyTexture );
+    loadTexture(renderer, "sight.png", &sight.sightTexture);
+    loadTexture(renderer, "spriteSheet.png", &dog.texture);
 
-    player.currentWeapon = &shotgun; // Start with the shotgun
-
-    sight.x = SCREEN_WIDTH / 2;
-    sight.y = SCREEN_HEIGHT / 2;
-    sight.speedX = 6;
-    sight.speedY = 6;
-
+    // Intialize Panel
+    flyAwayPanel = initializePanel(220,80,PANEL_X,PANEL_Y, "panel.png","FLY AWAY");
+    gameOverPanel = initializePanel(250, 80, PANEL_X,PANEL_Y, "panel.png","GAME OVER");
+    roundPanel = initializePanel(200,100, PANEL_X,PANEL_Y, "panel.png","ROUND 1");
+    perfectPanel = initializePanel(210, 60, PANEL_X,PANEL_Y, "panel.png","PERFECT!");
+    tryAgainPanel = initializePanel(600, 100, PANEL_X,PANEL_Y + 150, "flyAway.png","PRESS START TO RESTART");
 
     // Initialize joystick support
     if (SDL_NumJoysticks() > 0) {
         SDL_JoystickOpen(0); // Open the first joystick
     }
 
-    gameState = START;
-    messageTimer = SDL_GetTicks(); // Get the current time in milliseconds
-    displayStartMessage = true;
-
     return 0; // Return 0 on success, -1 on failure
 }
 
+void initializeGameVariables(){
+    // Initialize game
+    game.gameState = MENU;
+    game.menuCursorX = 145;
+    game.menuCursorY = 414;
+    game.gameType = GAME_A;
+    game.score = 0;
+    game.round = 1;
+    game.shot = 10;
+    game.roundStart = true;
+    game.birdsRemain = 10;
+    game.numBirds = 1;
+    game.topScore = readTopScore();
+
+    dog.dogState = DOG_IDLE;
+    dog.frameDelay = 150;
+    dog.dogX = 0 - 180;
+    dog.dogY = 430;
+
+    // Initialize sight (Because No NES Zapper :/)
+    sight.x = SCREEN_WIDTH / 2 - SIGHT_WIDTH/2;
+    sight.y = SCREEN_HEIGHT / 2 - SIGHT_HEIGHT/2;
+    sight.width = SIGHT_WIDTH;
+    sight.height = SIGHT_HEIGHT;
+    sight.speedX = 9;
+    sight.speedY = 9;
+    sight.isVisible = false;
+}
+// Function to handle joystick Event
 void handleEvents(int* quit) {
     // Poll joystick events
     SDL_JoystickUpdate();
@@ -150,273 +126,375 @@ void handleEvents(int* quit) {
             float joyX = SDL_JoystickGetAxis(joystick, 0) / 32767.0f;
             float joyY = SDL_JoystickGetAxis(joystick, 1) / 32767.0f;
 
-            // Check for "Start" button press (button 8) to start the game
-            if (SDL_JoystickGetButton(joystick, START_BUTTON_INDEX) && (gameState != PLAYING)) {
-                gameState = PLAYING; // Use a single equal sign for assignment
-                startTime = SDL_GetTicks();
-            }
+            // Handle event in the menu screen
+            if (game.gameState == MENU) {
 
-            // Apply acceleration threshold to joystick input when the game is not started
-            if (fabs(joyX) > 0.1f && (gameState == PLAYING)) {
-                sight.x += joyX * sight.speedX;
-            }
-            if (fabs(joyY) > 0.1f && (gameState == PLAYING)) {
-                sight.y += joyY * sight.speedY;
-            }
-            
-        }
-    }
+                // Check for "Start" button press (button 8) to start the game
+                if (SDL_JoystickGetButton(joystick, START_BUTTON_INDEX)) {
+                    game.gameState = PLAYING;
+                    roundStartTime = SDL_GetTicks();
 
-    // Clamp the cursor position within screen boundaries
-    if (sight.x < minX) {
-        sight.x = minX;
-    } else if (sight.x > maxX) {
-        sight.x = maxX;
-    }
-
-    if (sight.y < minY) {
-        sight.y = minY;
-    } else if (sight.y > maxY) {
-        sight.y = maxY;
-    }
-
-    // Implement other event handling logic here
-}
-
-
-void updateGame() {
- if (gameState == PLAYING) {
-        // Calculate the elapsed time since the game started
-        Uint32 currentTime = SDL_GetTicks();
-        Uint32 elapsedTime = currentTime - startTime;
-
-        if (currentTime - lastBirdSpawnTime >= birdSpawnDelay) {
-            // Spawn a bird
-            if (numBirds < NUM_BIRDS){
-                spawnBird();
-            }
-            lastBirdSpawnTime = currentTime; // Update the last spawn time
-        }
-
-        for (int i = 0; i < numBirds; i++) {
-            birds[i].x += birds[i].velocityX;
-
-            // Check if the bird has moved off the screen
-            if (birds[i].x > SCREEN_WIDTH) {
-                // Reset the bird's position to the left edge with a random y-coordinate
-                birds[i].x = 0 - BIRD_WIDTH;
-                birds[i].y = rand() % (321); // Random value between 160 and 480 (inclusive)
-
-            }
-
-            // Update the frame delay
-            birds[i].frameDelay--;
-
-            if (birds[i].frameDelay <= 0) {
-                // Update the current frame for animation
-                birds[i].currentFrame++;
-                if (birds[i].currentFrame >= birds[i].totalFrames) {
-                    birds[i].currentFrame = 0; // Loop back to the first frame
+                    // depends on the menu Cursor position
+                    switch(game.menuCursorY){
+                        case 414:
+                            game.gameType = GAME_A;
+                            break;
+                        case 466:
+                            game.gameType = GAME_B;
+                            break;
+                        case 518:
+                            game.gameType = GAME_C;
+                            break;
+                        default:
+                            game.gameType = GAME_A;
+                    }
                 }
 
-                // Reset the frame delay
-                birds[i].frameDelay = 20; // Adjust this value to control the animation speed
+                // Check for gameType change
+                if (fabs(joyY) > 0.1f) {
+                    if (!joyYButtonPressed) {
+                        game.menuCursorY += 52;
+
+                        if(game.menuCursorY >= 414 + (3*52)){
+                            game.menuCursorY = 414;
+                        }
+                        joyYButtonPressed = true; // Set the flag to true
+                    }
+                } else {
+                    // Reset the flag when the button is released
+                    joyYButtonPressed = false;
+                }
+            }
+
+            // Handle event during game 
+            else if(game.gameState == PLAYING){
+                
+                // Apply acceleration threshold to joystick input when the game is not started
+                if (fabs(joyX) > 0.1f) {
+                    sight.x += joyX * sight.speedX;
+                }
+                if (fabs(joyY) > 0.1f) {
+                    sight.y += joyY * sight.speedY;
+                }
+
+                // Check for "A" button press (button X, for example) to fire
+                bool aButtonPressedNow = SDL_JoystickGetButton(joystick, BUTTON_A) && (game.gameState == PLAYING);
+                if (aButtonPressedNow && !aButtonPressed) {
+
+                    bool hitSomething = false;
+                    
+                    // "A" button was pressed this frame and not pressed in the previous frame
+                    for (int i = 0; i < numBirds; i++) {
+                        if (isCursorOnBird(sight.x, sight.y, &birds[i]) && !birds[i].isFlyAway) {
+                            // Player hit a bird, increase the score depends on the duck type (500 || 1000)
+                            game.score += 100;
+                            game.hit += 1;
+                            birds[i].isHit = true;
+                            game.birdsRemain -= 1;
+                            birdHitTime = SDL_GetTicks(); 
+                            hitSomething = true;
+                            break; // Exit the loop after hitting one bird
+                        }
+                    }
+
+                    if(!hitSomething){
+                        game.shot -= 1;
+                    }
+                }
+                
+                // Update the flag for next frame
+                aButtonPressed = aButtonPressedNow;
+            }
+            else if(game.gameState == GAME_OVER){
+                if (SDL_JoystickGetButton(joystick, START_BUTTON_INDEX)) {
+                    game.gameState = PLAYING;
+                    roundStartTime = SDL_GetTicks();
+                }
             }
         }
+    }
 
-        // Calculate the remaining time
-        remainingTime = 60 - (elapsedTime / 1000); // Convert milliseconds to seconds
+    // Clamp the sight position within screen boundaries
+    if (sight.x < 0) {
+        sight.x = 0;
+    } else if (sight.x > SCREEN_WIDTH - SIGHT_WIDTH) {
+        sight.x = SCREEN_WIDTH - SIGHT_WIDTH;
+    }
 
-        // Check if the game timer has run out
-        if (remainingTime <= 0) {
-            gameState = GAME_OVER;
-            remainingTime = 0;
-        }
-
+    if (sight.y < 0) {
+        sight.y = 0;
+    } else if (sight.y > SCREEN_HEIGHT - SIGHT_HEIGHT) {
+        sight.y = SCREEN_HEIGHT - SIGHT_HEIGHT;
     }
 
 }
 
+// Function to update the game
+void updateGame() {
+
+    // 60 FPS
+    static Uint32 lastUpdateTime = 0;
+    Uint32 currentTime = SDL_GetTicks();
+
+    // Control the frame rate by introducing a time delay
+    if (currentTime - lastUpdateTime < 16) {
+        // Delay for 16 milliseconds (approximately 60 frames per second)
+        SDL_Delay(16 - (currentTime - lastUpdateTime));
+    }
+
+    lastUpdateTime = SDL_GetTicks();
+
+    if (game.gameState == MENU) {
+        sight.isVisible = false;
+        static Uint32 lastCursorToggleTime = 0;
+        Uint32 currentTime = SDL_GetTicks();
+
+        // Toggle cursor visibility every 500 milliseconds (0.5 seconds)
+        if (currentTime - lastCursorToggleTime >= 500) {
+            menuCursorVisible = !menuCursorVisible;
+            lastCursorToggleTime = currentTime;
+        }
+    } 
+    
+    else if (game.gameState == PLAYING) {
+
+        sight.isVisible = true;
+        static bool sniffingStarted = false; // Initialize as false
+        Uint32 sniffingStartTime = 0; // Initialize to 0
+
+        if (dogAnimationTerminate == false) {
+            dogAnimation(&dog);
+        }else{
+            if(numBirds < game.numBirds){
+                birds[numBirds++] = spawnBird(200); // Set random spawn X
+            }
+
+            for(int i=0; i<game.numBirds;i++){
+                updateBird(&birds[i]);
+            }
+        }
+
+        // Handle case NO SHOT REMAIN 
+        if(game.shot == 0){
+            for(int i=0; i<game.numBirds;i++){
+                birds[i].isFlyAway = true;
+            }
+            // Game Over 
+            game.gameState = GAME_OVER;
+        }
+
+        // handle round 
+        if(game.birdsRemain == 0 && game.shot>0){
+            // Go next round 
+            game.shot = 3;
+            game.hit = 0;
+            game.round += 1;
+            game.birdsRemain = 10;
+            game.roundStart = true;
+            roundStartTime = SDL_GetTicks();
+        }
+    }
+    else if (game.gameState == GAME_OVER) {
+
+        static Uint32 lastPopUpToggleTime = 0;
+        Uint32 currentTime = SDL_GetTicks();
+
+        // Toggle "try again " popup visibility every second 
+        if (currentTime - lastPopUpToggleTime >= 1000) {
+            popUpVisible = !popUpVisible;
+            lastPopUpToggleTime = currentTime;
+        }
+        // Check to score
+        if (game.score > game.topScore){
+            setTopScore(game.score);
+        }
+
+    }
+}
+
+// Function to render the game
 void renderGame() {
 
-    // Clear the screen and render background
+    // Clear the screen and render the game
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
-    if (gameState == START) {
+    // Render the screen menu
+    if (game.gameState == MENU) {
 
-        // Render "Press Start" message at the center of the screen
-        // You can use SDL functions to render text or display an image
-        SDL_Rect backgroundRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
-        SDL_Rect sightRect = {SCREEN_WIDTH/2 - 50,SCREEN_HEIGHT/2 - 50,100,100};
-        SDL_Rect weaponRect = {WEAPON_X,WEAPON_Y,184,64};
+        SDL_Rect menuRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
 
+        SDL_RenderCopy(renderer, game.menuTexture, NULL, &menuRect);
 
-        SDL_RenderCopy(renderer, backgroundTexture, NULL, &backgroundRect);
-        SDL_RenderCopy(renderer, sight.sightTexture, NULL, &sightRect);
-        SDL_RenderCopy(renderer, player.currentWeapon->texture, NULL, &weaponRect);
-
-        renderTimer(renderer,remainingTime);
-
-        // Calculate the time passed since the start message started flickering
-        Uint32 currentTime = SDL_GetTicks();
-        Uint32 timeElapsed = currentTime - messageTimer;
-
-        // Render the message only if the time elapsed is less than, say, 1000 milliseconds (1 second)
-        if (timeElapsed % 2000 < 1000) {
-            displayStartMessage = true;
-        } else {
-            displayStartMessage = false;
+        if (menuCursorVisible) {
+            SDL_Rect cursorRect = { game.menuCursorX, game.menuCursorY, CURSOR_WIDTH, CURSOR_HEIGHT };
+            SDL_RenderCopy(renderer, game.cursorTexture, NULL, &cursorRect);
         }
-
-        // Render the message if the displayMessage flag is true
-        if (displayStartMessage) {
-            char *text = "Press start to play!";
-            renderText(renderer, "prstart.ttf", text, SCREEN_WIDTH/2, SCREEN_HEIGHT/2 + 150,"WHITE",32); 
-        }
-
-        renderScore(renderer,score);
-
+        renderTopScore(renderer);
+        renderSight(renderer, &sight);
 
     }
-    else if (gameState == PLAYING) {
-        // Render the player, enemies, bullets, and other game objects
-        // Render the gun sight at the center of the screen
+    // Handle Render while playing 
+    else if (game.gameState == PLAYING) {
+
+        Uint32 currentTime =  SDL_GetTicks();
+
+        // Render the background
         SDL_Rect backgroundRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
-        SDL_RenderCopy(renderer, backgroundTexture, NULL, &backgroundRect);
+        SDL_RenderCopy(renderer, game.backgroundTexture, NULL, &backgroundRect);
 
+        // Display round pop-up panel when round begin
+        if(game.roundStart){
+            char temp[20];
+            snprintf(temp, sizeof(temp), "ROUND %d", game.round );
+            roundPanel.content = strdup(temp);
+            renderPanel(renderer, &roundPanel);
+            if((currentTime - roundStartTime) >= 3000){
+                game.roundStart = false;
+            }
+        }
 
-        // Render the birds
+        // Render bird - ONLY ONE AVAILABLE FOR NOW
         for (int i = 0; i < numBirds; i++) {
-            int frameX = (birds[i].currentFrame % birds[i].numColumns) * birds[i].frameWidth;
-            int frameY = (birds[i].currentFrame / birds[i].numColumns) * birds[i].frameHeight;
-
-            SDL_Rect birdSrcRect = {
-                frameX,           // Calculate the source x-coordinate based on the current frame
-                frameY,           // Calculate the source y-coordinate based on the current frame
-                birds[i].frameWidth,
-                birds[i].frameHeight
-            };
-
-            SDL_Rect birdDestRect = {birds[i].x, birds[i].y, birds[i].frameWidth, birds[i].frameHeight};
-
-            SDL_RenderCopy(renderer, birds[i].texture, &birdSrcRect, &birdDestRect);
+            if(game.roundStart == false ){
+                renderBird(renderer, &birds[i]);
+            }
         }
 
-        SDL_Rect sightRect = {sight.x -50 ,sight.y -50,100,100};
-        SDL_RenderCopy(renderer, sight.sightTexture, NULL, &sightRect);
+        // Render background layer
+        SDL_Rect backgroundNoBgRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+        SDL_RenderCopy(renderer, game.backgroundWithoutSkyTexture, NULL, &backgroundNoBgRect);
 
-        renderTimer(renderer,remainingTime);
-        renderScore(renderer,score);
+        // Render the dog
+        switch(dog.dogState){
+            case DOG_WALKING:
+                renderDogWalking(renderer, &dog);
+                break;
+            case DOG_SNIFFING:
+                renderDogSniffing(renderer, &dog);
+                break;
+            case DOG_SMILING:
+                renderDogSmiling(renderer, &dog);
+                break;
+            case DOG_JUMPING:
+                renderDogJumping(renderer, &dog);
+                break;
+            case DOG_LANDING:
+                renderDogLanding(renderer, &dog);
+                SDL_Rect backgroundRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+                SDL_RenderCopy(renderer, game.backgroundWithoutSkyTexture, NULL, &backgroundRect);
+                break;
+            default:
+                renderDogWalking(renderer, &dog);
+        }
 
+        // Render the gun sight
+        renderSight(renderer, &sight);
+
+        // Display pop-up panel if bird fly away
+        for(int i=0; i<numBirds;i++){
+            if(birds[i].isFlyAway){
+                renderPanel(renderer, &flyAwayPanel);
+            }
+        }
+
+        // Render game informations
+        renderScore(game.score);
+        renderRound(game.round);
+        renderShot(game.shot);
+        renderHit(game.hit);
     }
-    else if (gameState == GAME_OVER) {
-        // Render game over message and final score
+    else if (game.gameState == GAME_OVER) {
+        Uint32 currentTime =  SDL_GetTicks();
+
+        // Render the background
+        SDL_Rect backgroundRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+        SDL_RenderCopy(renderer, game.backgroundTexture, NULL, &backgroundRect);
+
+        // Render pop-up "GAME OVER"
+        renderPanel(renderer, &gameOverPanel);
+
+        // Render pop-up "try again"
+        if(popUpVisible){
+            renderPanel(renderer, &tryAgainPanel);
+        }
     }
 
     // Update the screen
     SDL_RenderPresent(renderer);
 }
 
+// Function to clean
 void cleanupGame(){
-    // Free background texture
-    if (backgroundTexture) {
-        SDL_DestroyTexture(backgroundTexture);
-    }
-    // Free bird textures
-    for (int i = 0; i < NUM_BIRDS; i++) {
-        if (birds[i].texture) {
-            SDL_DestroyTexture(birds[i].texture);
-        }
-    }
 
-    // Other cleanup logic
-
-    // Quit SDL
     SDL_Quit();
 }
 
-bool loadTexture(SDL_Renderer *renderer, const char *imagePath, SDL_Texture **texture) {
-    SDL_Surface *surface = IMG_Load(imagePath);
-    if (!surface) {
-        return false;
-    }
-    *texture = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_FreeSurface(surface);
-    return (*texture != NULL);
-}
-
-// Function to display text at screen
-void renderText(SDL_Renderer* renderer, const char* fontFile, const char* text, int x, int y, const char* color, int fontSize) {
-    
-    TTF_Font* font = TTF_OpenFont(fontFile, fontSize);
-    SDL_Color greenColor = {0, 255, 0} ;
-    SDL_Color whiteColor = {255, 255, 255} ;
-    SDL_Color blackColor = {0,0,0} ;
-
-    SDL_Surface* textSurface ;
-
-
-    if(strcmp(color, "GREEN") == 0){
-        textSurface = TTF_RenderText_Solid(font, text, greenColor);
-
-
-    }else if(strcmp(color, "WHITE") == 0){
-        textSurface = TTF_RenderText_Solid(font, text, whiteColor);
-
-    }
-    else if(strcmp(color, "BLACK") == 0){
-        textSurface = TTF_RenderText_Solid(font, text, blackColor);
-
-    }
-
-
-    if (!font) {
-        // Handle font loading error
-        fprintf(stderr, "Failed to load font: %s\n", TTF_GetError());
-        return;
-    }
-
-    if (textSurface == NULL) {
-        // Handle error
-        fprintf(stderr, "Failed to render text: %s\n", TTF_GetError());
-        TTF_CloseFont(font);
-        return;
-    }
-
-    SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
-
-    if (textTexture == NULL) {
-        // Handle error
-        fprintf(stderr, "Failed to create texture from surface: %s\n", SDL_GetError());
-        SDL_FreeSurface(textSurface);
-        TTF_CloseFont(font);
-        return;
-    }
-
-    int textWidth, textHeight;
-    SDL_QueryTexture(textTexture, NULL, NULL, &textWidth, &textHeight);
-
-    // Adjust the position to center the text
-    int centerX = x - textWidth / 2;
-    int centerY = y - textHeight / 2;
-
-    SDL_Rect renderRect = {centerX, centerY, textWidth, textHeight};
-    SDL_RenderCopy(renderer, textTexture, NULL, &renderRect);
-
-    SDL_FreeSurface(textSurface);
-    SDL_DestroyTexture(textTexture);
-    TTF_CloseFont(font);
-}
-
-void renderTimer(SDL_Renderer *renderer,int remainingTime){
-    char remainingTimeString[50];
-    snprintf(remainingTimeString, sizeof(remainingTimeString), "Timer: %d", remainingTime);
-    renderText(renderer, "prstart.ttf", remainingTimeString, TIMER_X, TIMER_Y,"WHITE",26);
-}
-void renderScore(SDL_Renderer *renderer,int score){
+// Function to render the top score (menu screen)
+void renderTopScore(SDL_Renderer *renderer) {
+    int topScore = readTopScore();
     char scoreString[50];
-    snprintf(scoreString, sizeof(scoreString), "Score: %d", score);
-    renderText(renderer, "prstart.ttf", scoreString, SCORE_X, SCORE_Y,"WHITE",26);
+    snprintf(scoreString, sizeof(scoreString), "%d", topScore);
+    renderText(renderer, "prstart.ttf", scoreString, TOP_SCORE_X, TOP_SCORE_Y, "GREEN", 26);
+}
+
+// Function to render the current score
+void renderScore(int score){
+    char scoreString[50];
+    snprintf(scoreString, sizeof(scoreString), "%d", score);
+    renderText(renderer, "prstart.ttf", scoreString, SCORE_X, SCORE_Y, "WHITE", 25);
+}
+
+// Function to render player's shot remaining
+void renderShot(int shot){
+
+    int width =0;
+    int height = 0;
+
+    switch(shot){
+        case 0:
+            width = 70;
+            height = 25;
+            break;       
+        case 1:
+            width = 50;
+            height = 25;
+            break;
+        case 2:
+            width = 25;
+            height = 25;
+            break;
+        case 3:
+            width = 0;
+            height = 0;
+            break;
+    }
+    SDL_Color blackColor = {0, 0, 0, 255};
+    SDL_Rect rect = {SHOT_X, SHOT_Y, width, height};
+
+    SDL_SetRenderDrawColor(renderer, blackColor.r, blackColor.g, blackColor.b, blackColor.a);
+    SDL_RenderFillRect(renderer, &rect);
+
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+}
+
+// Function to render the current round
+void renderRound(int round){
+    char roundString[50];
+    snprintf(roundString, sizeof(roundString), "%d", round);
+    renderText(renderer, "prstart.ttf", roundString, ROUND_X, ROUND_Y, "YELLOW", 25);
+}
+
+// Function to render hit remaining
+void renderHit(int hit){
+
+}
+
+// Function to render the gun sight
+void renderSight(SDL_Renderer *renderer, Sight *sight){
+    if(sight->isVisible){
+        SDL_Rect rect = {sight->x,sight->y,sight->width ,sight->height};
+        SDL_RenderCopy(renderer, sight->sightTexture, NULL, &rect);        
+    }
 }
 
